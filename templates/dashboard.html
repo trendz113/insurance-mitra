@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Insurance Mitra{% endblock %}
+{% block head %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="paper">
+    <div class="top-link-row">
+      <a class="link" href="{{ url_for('logout') }}">Log out ({{ user.email }})</a>
+    </div>
+    <div class="header">
+      <div>
+        <div class="eyebrow">INSURANCE MITRA</div>
+        <h1 id="page-title">Claim rejection case file</h1>
+      </div>
+    </div>
+
+    <div class="tab-row">
+      <button class="tab-btn active" id="tab-analyzer-btn" onclick="switchTab('analyzer')">My claim was rejected</button>
+      <button class="tab-btn" id="tab-checklist-btn" onclick="switchTab('checklist')">I'm buying a new policy</button>
+    </div>
+
+    <!-- ===================== ANALYZER TAB ===================== -->
+    <div class="tab-content active" id="tab-analyzer">
+
+      <div id="an-step-form">
+        <p class="lede">Tell us what happened. We'll check your rejection against IRDAI rules before you write a single word to the insurer.</p>
+        <div class="field">
+          <label>Insurance company</label>
+          <input type="text" id="an-insurer" placeholder="e.g. Star Health">
+        </div>
+        <div class="field">
+          <label>Policy name</label>
+          <input type="text" id="an-policyName" placeholder="e.g. Star Comprehensive">
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Claim amount (₹)</label>
+            <input type="number" id="an-claimAmount" placeholder="125000">
+          </div>
+          <div class="field">
+            <label>Hospital</label>
+            <input type="text" id="an-hospital" placeholder="e.g. Apollo Hospital">
+          </div>
+        </div>
+        <div class="field">
+          <label>Diagnosis / reason for hospitalization</label>
+          <input type="text" id="an-diagnosis" placeholder="e.g. Acute appendicitis">
+        </div>
+        <div class="field">
+          <label>What did the insurer say in the rejection? (paste their wording if you have it)</label>
+          <textarea id="an-rejectionReason" rows="4" placeholder="e.g. Claim repudiated on grounds of non-disclosure of pre-existing condition"></textarea>
+        </div>
+        <button class="btn-primary" id="an-open-case-btn" onclick="openCase()" disabled>Open case file →</button>
+      </div>
+
+      <div id="an-step-questions" style="display:none;">
+        <div class="match-tag" id="an-match-tag"></div>
+        <div class="secondary-note" id="an-secondary-note" style="display:none;"></div>
+        <p class="lede">A few quick questions to score your case accurately.</p>
+        <div id="an-questions-container"></div>
+        <button class="btn-primary" id="an-get-verdict-btn" onclick="getVerdict()" disabled>Get verdict →</button>
+      </div>
+
+      <div id="an-step-verdict" style="display:none;">
+        <div class="secondary-note" id="an-verdict-secondary-note" style="display:none;"></div>
+        <div class="seal-wrap">
+          <div class="seal" id="an-seal">
+            <div class="seal-score" id="an-seal-score"></div>
+            <div class="seal-label" id="an-seal-label"></div>
+          </div>
+        </div>
+        <div class="box">
+          <div class="box-title">Why this score</div>
+          <p class="box-text" id="an-verdict-explain"></p>
+        </div>
+        <div class="box">
+          <div class="box-title">What to do next</div>
+          <ol>
+            <li>Write to the insurer's Grievance Redressal Officer (GRO) — every insurer must publish this contact.</li>
+            <li>No response in 15 days → file on IRDAI's Bima Bharosa portal.</li>
+            <li>No resolution in 30 days → Insurance Ombudsman. Free, binding up to ₹50 lakh, no lawyer needed.</li>
+          </ol>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="generateLetter()">Draft my grievance letter →</button>
+          <button class="btn-ghost" onclick="resetAnalyzer()">Start new case</button>
+        </div>
+      </div>
+
+      <div id="an-step-letter" style="display:none;">
+        <div class="box-title">Your grievance letter</div>
+        <p class="lede" id="an-letter-loading">Drafting your letter…</p>
+        <div class="letter-box" id="an-letter-box" style="display:none;"></div>
+        <div class="btn-row" id="an-letter-actions" style="display:none;">
+          <button class="btn-primary" id="an-copy-btn" onclick="copyLetter()">Copy letter text</button>
+          <button class="btn-ghost" onclick="backToVerdict()">← Back to verdict</button>
+        </div>
+
+        <div class="box" id="an-tracking-box" style="display:none; margin-top: 20px;">
+          <div class="box-title">Track this case to resolution</div>
+          <p class="box-text" id="an-tracking-pitch">
+            Once you've sent this letter, we can track your deadlines for you — when to follow up with the GRO, when to escalate to IRDAI, and when to file with the Ombudsman. This is a one-time ₹199 for this case.
+          </p>
+          <div id="an-tracking-paid-view" style="display:none;">
+            <p class="box-text">✓ Tracking is active for this case.</p>
+            <button class="btn-primary" onclick="markGroSent()">I've sent the letter — start tracking</button>
+          </div>
+          <button class="btn-primary" id="an-pay-btn" onclick="startTrackingPayment()">Pay ₹199 & start tracking →</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===================== CHECKLIST TAB ===================== -->
+    <div class="tab-content" id="tab-checklist">
+
+      <div id="ck-step-form">
+        <p class="lede">Going through this <strong>before</strong> you buy a policy means the insurer can never later say "you didn't tell us." Check anything that applies to you, even things that seem minor or were found incidentally on an old report.</p>
+        <div class="field">
+          <label>Your name (for the summary)</label>
+          <input type="text" id="ck-name" placeholder="Full name as on the proposal form">
+        </div>
+        <div class="field">
+          <label>Insurer you're buying from</label>
+          <input type="text" id="ck-insurer" placeholder="e.g. HDFC Ergo">
+        </div>
+
+        {% for group in checklist_groups %}
+        <div class="checklist-group">
+          <div class="checklist-group-title">{{ group['group'] }}</div>
+          {% for item in group['items'] %}
+          <div class="checklist-item">
+            <label class="checklist-label">
+              <input type="checkbox" data-item-id="{{ item.id }}" onchange="toggleChecklistItem('{{ item.id }}', this.checked)">
+              {{ item.label }}
+            </label>
+            <input type="text" class="note-input" id="note-{{ item.id }}" style="display:none;"
+                   placeholder="Optional: when found / details">
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+
+        <button class="btn-primary" onclick="generateChecklistSummary()">Generate my disclosure summary →</button>
+      </div>
+
+      <div id="ck-step-summary" style="display:none;">
+        <div class="box-title">Your written disclosure summary</div>
+        <p class="lede">Give this to your insurer or agent in writing (email is fine — it creates a timestamp) when you submit your proposal form. Keep a copy for yourself.</p>
+        <div class="letter-box" id="ck-summary-box"></div>
+        <div class="btn-row">
+          <button class="btn-primary" id="ck-copy-btn" onclick="copySummary()">Copy summary text</button>
+          <button class="btn-ghost" onclick="backToChecklist()">← Back to checklist</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
