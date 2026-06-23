@@ -1,6 +1,9 @@
 """
 db.py — thin Postgres access layer. No ORM, just psycopg2 with explicit SQL,
 since the schema is small and stable. Uses Railway's DATABASE_URL env var.
+
+No login/accounts: user_id is an anonymous per-browser-session UUID string
+(see app.py get_anon_user_id()), not a foreign key to a users table.
 """
 import os
 import json
@@ -21,34 +24,6 @@ def init_schema():
             with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
                 cur.execute(f.read())
         conn.commit()
-
-
-# ---- users ----
-
-def create_user(email, password_hash, name=None):
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "INSERT INTO users (email, password_hash, name) VALUES (%s, %s, %s) RETURNING id, email, name",
-                (email, password_hash, name),
-            )
-            row = cur.fetchone()
-        conn.commit()
-    return row
-
-
-def get_user_by_email(email):
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM users WHERE email = %s", (email,))
-            return cur.fetchone()
-
-
-def get_user_by_id(user_id):
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id, email, name, created_at FROM users WHERE id = %s", (user_id,))
-            return cur.fetchone()
 
 
 # ---- claim cases ----
