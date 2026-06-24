@@ -7,3 +7,4 @@ gspread==6.1.2
 google-auth==2.32.0
 razorpay==1.4.2
 setuptools==75.6.0
+flask-cors==4.0.1
