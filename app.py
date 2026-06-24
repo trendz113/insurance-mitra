@@ -41,6 +41,7 @@ import logging
 import functools
 import requests
 from flask import Flask, request, jsonify, session, render_template
+from flask_cors import CORS
 
 import db
 import rules
@@ -51,6 +52,23 @@ logger = logging.getLogger("app")
 
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
+
+# CORS for the trial period: insurance-mitra.html is hosted as a static file
+# on salarybit.in, but all API calls go to this Railway-hosted backend.
+# supports_credentials=True is required so the browser sends/receives the
+# anon_id session cookie across the salarybit.in -> Railway boundary --
+# without it, every request would look like a brand-new anonymous visitor.
+#
+# Also need SESSION_COOKIE_SAMESITE="None" + SESSION_COOKIE_SECURE=True
+# below, since modern browsers refuse to send a session cookie cross-site
+# unless it's explicitly marked SameSite=None and Secure (HTTPS only,
+# which Railway already gives us).
+CORS(app, supports_credentials=True, origins=[
+    "https://salarybit.in",
+    "https://www.salarybit.in",
+])
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
