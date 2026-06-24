@@ -24,8 +24,9 @@ import logging
 logger = logging.getLogger("payments")
 
 LETTER_PRICE_PAISE = {
-    "health": 9900,  # ₹99.00
-    "life": 0,        # free -- local template, no Claude API cost
+    "health": 9900,                # ₹99.00
+    "life": 0,                      # free -- local template, no Claude API cost
+    "policy_recommendation": 9900,  # ₹99.00 -- also calls the Claude API
 }
 
 _client = None
