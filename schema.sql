@@ -10,6 +10,7 @@
 -- users table, since there is no production data to preserve yet.
 
 DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS policy_recommendations;
 DROP TABLE IF EXISTS case_events;
 DROP TABLE IF EXISTS disclosure_summaries;
 DROP TABLE IF EXISTS life_claim_cases;
@@ -125,5 +126,20 @@ CREATE TABLE IF NOT EXISTS disclosure_summaries (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Age-based policy recommendations (paid, ₹99, Claude-generated). Not tied
+-- to a claim case -- this is a forward-looking "what should I buy" request,
+-- so it gets its own ref/table, but uses the same payments table for the
+-- Razorpay flow (case_type = 'policy_recommendation').
+CREATE TABLE IF NOT EXISTS policy_recommendations (
+    id SERIAL PRIMARY KEY,
+    recommendation_ref VARCHAR(20) UNIQUE NOT NULL, -- e.g. IR-2026-4821
+    user_id VARCHAR(36) NOT NULL,
+    inputs JSONB,            -- age, dependents, hasExistingConditions, monthlyBudget, city
+    recommendation_text TEXT, -- last generated recommendation, if any
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_claim_cases_user_id ON claim_cases(user_id);
 CREATE INDEX IF NOT EXISTS idx_disclosure_summaries_user_id ON disclosure_summaries(user_id);
+CREATE INDEX IF NOT EXISTS idx_policy_recommendations_user_id ON policy_recommendations(user_id);
