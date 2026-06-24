@@ -415,3 +415,54 @@ def list_disclosure_summaries_for_user(user_id):
                 (user_id,),
             )
             return cur.fetchall()
+
+
+# ---- policy recommendations ----
+
+def generate_recommendation_ref():
+    year = __import__("datetime").date.today().year
+    n = "".join(random.choices(string.digits, k=4))
+    return f"IR-{year}-{n}"
+
+
+def create_policy_recommendation(user_id, inputs):
+    recommendation_ref = generate_recommendation_ref()
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO policy_recommendations (recommendation_ref, user_id, inputs)
+                VALUES (%s, %s, %s)
+                RETURNING *
+                """,
+                (recommendation_ref, user_id, json.dumps(inputs)),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row
+
+
+def get_policy_recommendation_by_ref(recommendation_ref, user_id):
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM policy_recommendations WHERE recommendation_ref = %s AND user_id = %s",
+                (recommendation_ref, user_id),
+            )
+            return cur.fetchone()
+
+
+def update_policy_recommendation_text(recommendation_ref, user_id, recommendation_text):
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE policy_recommendations SET recommendation_text = %s, updated_at = NOW()
+                WHERE recommendation_ref = %s AND user_id = %s
+                RETURNING *
+                """,
+                (recommendation_text, recommendation_ref, user_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row
