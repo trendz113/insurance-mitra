@@ -158,18 +158,43 @@ async function submitScore() {
   showStep('an-step-verdict');
 }
 
+// ===== Letter generation (paid step — ₹99) =====
+//
+// /api/generate-letter now requires a verified Razorpay payment for this
+// case. If payment hasn't happened yet, the backend responds with
+// 402 + {"error": "payment_required"}. In that case we open Razorpay
+// checkout first, verify the payment, then call generate-letter again.
+// If the Claude call itself fails after payment, the backend does NOT
+// burn the payment record, so simply retrying generateLetter() is safe
+// and will not charge the user a second time.
+
 async function generateLetter() {
   showStep('an-step-letter');
+  document.getElementById('an-letter-loading').textContent = 'Drafting your letter…';
   document.getElementById('an-letter-loading').style.display = 'block';
   document.getElementById('an-letter-box').style.display = 'none';
   document.getElementById('an-letter-actions').style.display = 'none';
 
+  await requestLetter();
+}
+
+async function requestLetter() {
   const res = await fetch('/api/generate-letter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseRef: an.caseRef }),
   });
   const data = await res.json();
+
+  if (res.status === 402 && data.error === 'payment_required') {
+    // Payment needed before we can generate the letter. Kick off
+    // Razorpay checkout; on success, retry requestLetter().
+    document.getElementById('an-letter-loading').textContent =
+      'This letter is a one-time ₹99 — complete payment to continue.';
+    await startLetterPayment();
+    return;
+  }
+
   document.getElementById('an-letter-loading').style.display = 'none';
 
   const box = document.getElementById('an-letter-box');
@@ -178,6 +203,71 @@ async function generateLetter() {
   document.getElementById('an-letter-actions').style.display = 'flex';
   an.lastLetter = data.letter || '';
   document.getElementById('an-tracking-box').style.display = 'block';
+}
+
+async function startLetterPayment() {
+  const res = await fetch('/api/payments/create-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caseRef: an.caseRef, caseType: 'health' }),
+  });
+  const data = await res.json();
+
+  if (data.alreadyPaid) {
+    // Edge case: payment was verified between our first attempt and now.
+    await requestLetter();
+    return;
+  }
+  if (!res.ok) {
+    document.getElementById('an-letter-loading').style.display = 'none';
+    const box = document.getElementById('an-letter-box');
+    box.textContent = data.error || 'Could not start payment. Please try again.';
+    box.style.display = 'block';
+    return;
+  }
+
+  const options = {
+    key: data.keyId,
+    amount: data.amount,
+    currency: data.currency,
+    name: 'Insurance Mitra',
+    description: 'Grievance letter — ' + an.caseRef,
+    order_id: data.orderId,
+    handler: async function (response) {
+      const verifyRes = await fetch('/api/payments/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature,
+        }),
+      });
+      const verifyData = await verifyRes.json();
+      if (verifyRes.ok && verifyData.verified) {
+        document.getElementById('an-letter-loading').textContent = 'Payment received. Drafting your letter…';
+        await requestLetter();
+      } else {
+        document.getElementById('an-letter-loading').style.display = 'none';
+        const box = document.getElementById('an-letter-box');
+        box.textContent = 'Payment could not be verified. If money was deducted, please contact support with your case reference: ' + an.caseRef;
+        box.style.display = 'block';
+      }
+    },
+    modal: {
+      ondismiss: function () {
+        // User closed the Razorpay popup without paying.
+        document.getElementById('an-letter-loading').style.display = 'none';
+        const box = document.getElementById('an-letter-box');
+        box.textContent = 'Payment was not completed. Click "Draft my grievance letter" again whenever you\'re ready.';
+        box.style.display = 'block';
+      },
+    },
+    theme: { color: '#0F1B2E' },
+  };
+
+  const rzp = new Razorpay(options);
+  rzp.open();
 }
 
 function copyLetter() {
@@ -192,59 +282,7 @@ function backToVerdict() {
   showStep('an-step-verdict');
 }
 
-async function startTrackingPayment() {
-  const res = await fetch('/api/payments/create-order', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ caseRef: an.caseRef, caseType: 'health' }),
-  });
-  const data = await res.json();
-
-  if (data.alreadyPaid) {
-    showTrackingPaidView();
-    return;
-  }
-  if (!res.ok) {
-    alert(data.error || 'Could not start payment. Please try again.');
-    return;
-  }
-
-  const options = {
-    key: data.keyId,
-    amount: data.amount,
-    currency: data.currency,
-    name: 'Insurance Mitra',
-    description: 'Case tracking — ' + an.caseRef,
-    order_id: data.orderId,
-    handler: async function (response) {
-      const verifyRes = await fetch('/api/payments/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          razorpay_order_id: response.razorpay_order_id,
-          razorpay_payment_id: response.razorpay_payment_id,
-          razorpay_signature: response.razorpay_signature,
-        }),
-      });
-      const verifyData = await verifyRes.json();
-      if (verifyRes.ok && verifyData.verified) {
-        showTrackingPaidView();
-      } else {
-        alert('Payment could not be verified. If money was deducted, please contact support with your case reference: ' + an.caseRef);
-      }
-    },
-    theme: { color: '#0F1B2E' },
-  };
-
-  const rzp = new Razorpay(options);
-  rzp.open();
-}
-
-function showTrackingPaidView() {
-  document.getElementById('an-pay-btn').style.display = 'none';
-  document.getElementById('an-tracking-pitch').style.display = 'none';
-  document.getElementById('an-tracking-paid-view').style.display = 'block';
-}
+// ===== Case tracking (free — no payment required) =====
 
 async function markGroSent() {
   const res = await fetch('/api/track/gro-sent', {
@@ -254,10 +292,17 @@ async function markGroSent() {
   });
   const data = await res.json();
   if (res.ok) {
+    showTrackingStartedView();
     alert('Tracking started. We will track your 15-day GRO follow-up deadline for this case.');
   } else {
     alert(data.error || 'Something went wrong starting tracking.');
   }
+}
+
+function showTrackingStartedView() {
+  document.getElementById('an-pay-btn').style.display = 'none';
+  document.getElementById('an-tracking-pitch').style.display = 'none';
+  document.getElementById('an-tracking-paid-view').style.display = 'block';
 }
 
 function resetAnalyzer() {
