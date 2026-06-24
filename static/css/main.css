@@ -13,18 +13,49 @@
 .sub-tab-content { display: none; }
 .sub-tab-content.active { display: block; }
 
+/* ---- Government scheme card: styled like an official notice, with a
+   small gold seal badge echoing the score-seal graphic elsewhere ---- */
 .scheme-card {
   background: #FFFFFF;
   border: 1px solid #D3D1C7;
   border-radius: 4px;
-  padding: 16px 18px;
-  margin-bottom: 14px;
+  padding: 22px 22px 18px;
+  margin-bottom: 16px;
+  position: relative;
+  border-top: 3px solid #8A6A2A;
+}
+.scheme-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.scheme-badge {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 3px solid #8A6A2A;
+  background: #FAEEDA;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-6deg);
+}
+.scheme-badge-inner {
+  font-family: 'Source Serif Pro', Georgia, serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: #633806;
+  text-align: center;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
 }
 .scheme-card-title {
   font-family: 'Source Serif Pro', Georgia, serif;
-  font-size: 16px;
+  font-size: 17px;
   color: #0F1B2E;
-  margin: 0 0 8px;
+  margin: 4px 0 0;
 }
 .scheme-card .box-text { margin-bottom: 8px; }
 .scheme-card ul {
@@ -52,4 +83,27 @@
   background: #FFFFFF;
   color: #0F1B2E;
   font-family: inherit;
+}
+
+/* ---- Document-style header used above the AI-generated policy
+   recommendation, echoing the letter-box / case-file treatment ---- */
+.doc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid #0F1B2E;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+}
+.doc-header .eyebrow { margin-bottom: 0; }
+.doc-stamp {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #8A6A2A;
+  border: 1px solid #8A6A2A;
+  border-radius: 3px;
+  padding: 3px 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  transform: rotate(-3deg);
 }
