@@ -2,8 +2,9 @@
 db.py — thin Postgres access layer. No ORM, just psycopg2 with explicit SQL,
 since the schema is small and stable. Uses Railway's DATABASE_URL env var.
 
-No login/accounts: user_id is an anonymous per-browser-session UUID string
-(see app.py get_anon_user_id()), not a foreign key to a users table.
+No login/accounts: user_id is an anonymous UUID string generated per
+browser session (see get_anon_user_id() in app.py), not a foreign key to
+a users table. There is no users table anymore.
 """
 import os
 import json
@@ -23,7 +24,7 @@ def init_schema():
         with conn.cursor() as cur:
             with open(os.path.join(os.path.dirname(__file__), "schema.sql")) as f:
                 cur.execute(f.read())
-        conn.commit()
+            conn.commit()
 
 
 # ---- claim cases ----
@@ -54,8 +55,8 @@ def create_claim_case(user_id, insurer, policy_name, claim_amount, hospital,
                  json.dumps(answers), score),
             )
             row = cur.fetchone()
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def update_case_letter(case_ref, user_id, letter_text):
@@ -70,8 +71,8 @@ def update_case_letter(case_ref, user_id, letter_text):
                 (letter_text, case_ref, user_id),
             )
             row = cur.fetchone()
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def get_case_by_ref(case_ref, user_id):
@@ -128,8 +129,8 @@ def mark_gro_sent(case_ref, user_id, sent_date, table="claim_cases", case_type="
             if row:
                 _log_event(cur, case_ref, case_type, user_id, "gro_sent",
                            f"Letter sent to GRO on {sent_date}. Follow up by {followup_due} if no response.")
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def mark_irdai_filed(case_ref, user_id, filed_date, table="claim_cases", case_type="health"):
@@ -150,8 +151,8 @@ def mark_irdai_filed(case_ref, user_id, filed_date, table="claim_cases", case_ty
             if row:
                 _log_event(cur, case_ref, case_type, user_id, "irdai_filed",
                            f"Filed with IRDAI Bima Bharosa on {filed_date}.")
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def mark_ombudsman_filed(case_ref, user_id, filed_date, table="claim_cases", case_type="health"):
@@ -170,8 +171,8 @@ def mark_ombudsman_filed(case_ref, user_id, filed_date, table="claim_cases", cas
             if row:
                 _log_event(cur, case_ref, case_type, user_id, "ombudsman_filed",
                            f"Filed with Insurance Ombudsman on {filed_date}.")
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def mark_resolved(case_ref, user_id, resolved_date, outcome, resolution_amount=None,
@@ -195,8 +196,8 @@ def mark_resolved(case_ref, user_id, resolved_date, outcome, resolution_amount=N
                 if resolution_amount:
                     note += f" Amount recovered: ₹{resolution_amount}"
                 _log_event(cur, case_ref, case_type, user_id, stage, note)
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def mark_abandoned(case_ref, user_id, table="claim_cases", case_type="health"):
@@ -214,8 +215,8 @@ def mark_abandoned(case_ref, user_id, table="claim_cases", case_type="health"):
             row = cur.fetchone()
             if row:
                 _log_event(cur, case_ref, case_type, user_id, "abandoned", "Case marked as abandoned.")
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def add_case_note(case_ref, user_id, note_text, table="claim_cases", case_type="health"):
@@ -232,8 +233,8 @@ def add_case_note(case_ref, user_id, note_text, table="claim_cases", case_type="
             row = cur.fetchone()
             if row:
                 _log_event(cur, case_ref, case_type, user_id, "note_added", note_text)
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def get_case_events(case_ref):
@@ -294,8 +295,8 @@ def create_life_claim_case(user_id, insurer, policy_name, deceased_name, date_of
             )
             row = cur.fetchone()
             _log_event(cur, case_ref, "life", user_id, "letter_drafted", "Initial case opened and scored.")
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def update_life_case_letter(case_ref, user_id, letter_text):
@@ -310,8 +311,8 @@ def update_life_case_letter(case_ref, user_id, letter_text):
                 (letter_text, case_ref, user_id),
             )
             row = cur.fetchone()
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def get_life_case_by_ref(case_ref, user_id):
@@ -348,8 +349,8 @@ def create_payment_record(user_id, case_ref, case_type, razorpay_order_id, amoun
                 (user_id, case_ref, case_type, razorpay_order_id, amount_paise),
             )
             row = cur.fetchone()
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def mark_payment_verified(razorpay_order_id, razorpay_payment_id):
@@ -365,8 +366,8 @@ def mark_payment_verified(razorpay_order_id, razorpay_payment_id):
                 (razorpay_payment_id, razorpay_order_id),
             )
             row = cur.fetchone()
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def has_verified_payment(case_ref, user_id):
@@ -402,8 +403,8 @@ def save_disclosure_summary(user_id, insurer, profile_name, checked_items, notes
                  json.dumps(notes), summary_text),
             )
             row = cur.fetchone()
-        conn.commit()
-    return row
+            conn.commit()
+            return row
 
 
 def list_disclosure_summaries_for_user(user_id):
