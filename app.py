@@ -21,12 +21,18 @@ Routes:
   GET  /                          -> landing page (claim form)
   POST /api/analyze               -> classify rejection text, return rule + questions
   POST /api/score                 -> compute score from answers, save case, return verdict
-  POST /api/payments/create-order -> create Razorpay order for a case's letter
+  POST /api/payments/create-order -> create Razorpay order for a case's letter or a policy recommendation
   POST /api/payments/verify       -> verify Razorpay payment signature
   POST /api/generate-letter       -> call Claude API server-side, save + return letter (requires verified payment)
   GET  /api/cases                 -> list cases created in this browser session
   POST /api/checklist/summary     -> build + save disclosure summary text
   GET  /api/checklist/summaries   -> list summaries created in this browser session
+  POST /api/life/analyze          -> classify a life/death claim rejection text
+  POST /api/life/score            -> compute score for a life claim, save case, return verdict
+  POST /api/life/generate-letter  -> build life claim letter from local template (free, no Claude call)
+  GET  /api/life/cases            -> list life cases created in this browser session
+  POST /api/policy/recommend-request -> save recommendation inputs, return a recommendationRef to pay against
+  POST /api/policy/recommend      -> call Claude API server-side, return recommendation (requires verified payment)
 """
 import os
 import time
@@ -381,6 +387,116 @@ def api_list_life_cases():
     return jsonify({"cases": cases})
 
 
+# ---------- API: Age-based Policy Recommendation (paid, ₹99 -- calls Claude) ----------
+#
+# Two-step flow, same shape as the claim letter: first save the inputs and
+# get back a recommendation_ref, then (after a verified payment against
+# that ref) call Claude to generate the actual recommendation. This mirrors
+# create_claim_case + generate-letter, just for a "case" that isn't a
+# rejection at all -- it's a forward-looking purchase question.
+
+@app.route("/api/policy/recommend-request", methods=["POST"])
+def api_policy_recommend_request():
+    user_id = get_anon_user_id()
+    data = request.get_json(force=True)
+
+    age = data.get("age")
+    try:
+        age = int(age)
+    except (TypeError, ValueError):
+        return jsonify({"error": "age is required and must be a number"}), 400
+    if age < 18 or age > 100:
+        return jsonify({"error": "age must be between 18 and 100"}), 400
+
+    inputs = {
+        "age": age,
+        "dependents": data.get("dependents"),
+        "hasExistingConditions": data.get("hasExistingConditions"),  # "yes" | "no"
+        "existingConditionsDetail": data.get("existingConditionsDetail", ""),
+        "monthlyBudget": data.get("monthlyBudget"),
+        "city": data.get("city", ""),
+    }
+
+    rec = db.create_policy_recommendation(user_id=user_id, inputs=inputs)
+    return jsonify({"recommendationRef": rec["recommendation_ref"]})
+
+
+@app.route("/api/policy/recommend", methods=["POST"])
+def api_policy_recommend():
+    user_id = get_anon_user_id()
+    data = request.get_json(force=True)
+    recommendation_ref = data.get("recommendationRef")
+    if not recommendation_ref:
+        return jsonify({"error": "recommendationRef is required"}), 400
+
+    rec = db.get_policy_recommendation_by_ref(recommendation_ref, user_id)
+    if not rec:
+        return jsonify({"error": "Recommendation request not found"}), 404
+
+    if not db.has_verified_payment(recommendation_ref, user_id):
+        return jsonify({
+            "error": "payment_required",
+            "message": "Generating a personalized policy recommendation requires a one-time ₹99 payment. "
+                       "Create a payment order via /api/payments/create-order first.",
+        }), 402
+
+    inputs = rec["inputs"]
+    conditions_line = "No pre-existing conditions disclosed."
+    if inputs.get("hasExistingConditions") == "yes":
+        detail = inputs.get("existingConditionsDetail") or "details not specified"
+        conditions_line = f"Has pre-existing condition(s): {detail}."
+
+    prompt = f"""You are an Indian health/life insurance advisor recommending what TYPE of policy and coverage level a person should look for -- not a specific insurer's product, since you must stay neutral and not endorse a commercial brand.
+
+Person's details:
+- Age: {inputs['age']}
+- Number of dependents: {inputs.get('dependents') or 'not specified'}
+- {conditions_line}
+- Comfortable monthly premium budget: ₹{inputs.get('monthlyBudget') or 'not specified'}
+- City: {inputs.get('city') or 'not specified'}
+
+Give a personalized recommendation covering:
+1. What type of health policy fits this age/life-stage best (individual vs family floater, and why)
+2. A reasonable sum insured range for their age and city tier (mention that metro cities need higher cover due to treatment costs)
+3. Whether they should also consider a term life policy given their dependents, and a rough cover multiple of annual income to consider (do not assume their income; phrase as "a common rule of thumb is roughly 10-15x annual income" type guidance)
+4. Riders worth considering given their profile (e.g. critical illness rider, no-claim bonus, restoration benefit)
+5. One or two practical next steps (e.g. compare on official comparison tools, check waiting periods, read the exclusions list)
+
+Important: Do not name or recommend specific insurance companies or product names. Speak in terms of policy types and features only. Keep it under 350 words, plain paragraphs, no markdown formatting, warm but professional tone in plain English suitable for an Indian consumer."""
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+            },
+            json={
+                "model": ANTHROPIC_MODEL,
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        recommendation_text = "".join(
+            block.get("text", "") for block in result.get("content", [])
+            if block.get("type") == "text"
+        ).strip()
+        if not recommendation_text:
+            recommendation_text = "Could not generate a recommendation. Please try again."
+    except requests.RequestException:
+        # Fail-safe: payment is already verified at this point, so we do
+        # NOT burn the credit -- has_verified_payment will still return
+        # True, so the person can simply retry this endpoint.
+        return jsonify({"error": "Recommendation generation failed. Please try again in a moment."}), 502
+
+    db.update_policy_recommendation_text(recommendation_ref, user_id, recommendation_text)
+    return jsonify({"recommendation": recommendation_text})
+
+
 # ---------- API: Case Tracking (works for both health and life cases, free) ----------
 
 def _table_for_type(case_type):
@@ -540,17 +656,51 @@ def api_track_open_cases():
     return jsonify({"cases": cases, "sheetsEnabled": sheets.is_enabled()})
 
 
-# ---------- API: Payments (Razorpay) -- gates the Claude letter only ----------
+# ---------- API: Payments (Razorpay) -- gates the Claude letter and the policy recommendation ----------
+
+RECOMMENDATION_PRICE_PAISE = 9900  # ₹99, same as the letter
+
 
 @app.route("/api/payments/create-order", methods=["POST"])
 def api_create_payment_order():
     user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
+    recommendation_ref = data.get("recommendationRef")
     case_type = data.get("caseType", "health")
 
+    if recommendation_ref:
+        # ----- Paying for an age-based policy recommendation -----
+        rec = db.get_policy_recommendation_by_ref(recommendation_ref, user_id)
+        if not rec:
+            return jsonify({"error": "Recommendation request not found"}), 404
+
+        if db.has_verified_payment(recommendation_ref, user_id):
+            return jsonify({"alreadyPaid": True})
+
+        try:
+            order = payments.create_order(recommendation_ref, "policy_recommendation",
+                                           amount_paise=RECOMMENDATION_PRICE_PAISE)
+        except Exception as e:
+            return jsonify({"error": f"Could not create payment order: {e}"}), 502
+
+        db.create_payment_record(
+            user_id=user_id,
+            case_ref=recommendation_ref,
+            case_type="policy_recommendation",
+            razorpay_order_id=order["id"],
+            amount_paise=order["amount"],
+        )
+        return jsonify({
+            "orderId": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "keyId": os.environ["RAZORPAY_KEY_ID"],
+        })
+
+    # ----- Paying for a health claim's grievance letter -----
     if not case_ref:
-        return jsonify({"error": "caseRef is required"}), 400
+        return jsonify({"error": "caseRef or recommendationRef is required"}), 400
     if case_type != "health":
         return jsonify({"error": "The letter is free for this case type, no payment needed"}), 400
 
