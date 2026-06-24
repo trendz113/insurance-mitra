@@ -14,11 +14,13 @@
     </div>
 
     <div class="tab-row">
-      <button class="tab-btn active" id="tab-analyzer-btn" onclick="switchTab('analyzer')">My claim was rejected</button>
+      <button class="tab-btn active" id="tab-analyzer-btn" onclick="switchTab('analyzer')">My health claim was rejected</button>
+      <button class="tab-btn" id="tab-life-btn" onclick="switchTab('life')">My life/death claim was rejected</button>
       <button class="tab-btn" id="tab-checklist-btn" onclick="switchTab('checklist')">I'm buying a new policy</button>
+      <button class="tab-btn" id="tab-schemes-btn" onclick="switchTab('schemes')">Government schemes</button>
     </div>
 
-    <!-- ===================== ANALYZER TAB ===================== -->
+    <!-- ===================== HEALTH CLAIM ANALYZER TAB ===================== -->
     <div class="tab-content active" id="tab-analyzer">
 
       <div id="an-step-form">
@@ -109,47 +111,226 @@
 
     </div>
 
-    <!-- ===================== CHECKLIST TAB ===================== -->
-    <div class="tab-content" id="tab-checklist">
+    <!-- ===================== LIFE/DEATH CLAIM ANALYZER TAB ===================== -->
+    <div class="tab-content" id="tab-life">
 
-      <div id="ck-step-form">
-        <p class="lede">Going through this <strong>before</strong> you buy a policy means the insurer can never later say "you didn't tell us." Check anything that applies to you, even things that seem minor or were found incidentally on an old report.</p>
+      <div id="lf-step-form">
+        <p class="lede">We're sorry for your loss. Tell us what the insurer said, and we'll check it against IRDAI's rules for death claims before you respond.</p>
         <div class="field">
-          <label>Your name (for the summary)</label>
-          <input type="text" id="ck-name" placeholder="Full name as on the proposal form">
+          <label>Insurance company</label>
+          <input type="text" id="lf-insurer" placeholder="e.g. LIC">
         </div>
         <div class="field">
-          <label>Insurer you're buying from</label>
-          <input type="text" id="ck-insurer" placeholder="e.g. HDFC Ergo">
+          <label>Policy name / number</label>
+          <input type="text" id="lf-policyName" placeholder="e.g. Jeevan Anand">
         </div>
-
-        {% for group in checklist_groups %}
-        <div class="checklist-group">
-          <div class="checklist-group-title">{{ group['group'] }}</div>
-          {% for item in group['items'] %}
-          <div class="checklist-item">
-            <label class="checklist-label">
-              <input type="checkbox" data-item-id="{{ item.id }}" onchange="toggleChecklistItem('{{ item.id }}', this.checked)">
-              {{ item.label }}
-            </label>
-            <input type="text" class="note-input" id="note-{{ item.id }}" style="display:none;"
-                   placeholder="Optional: when found / details">
-          </div>
-          {% endfor %}
+        <div class="field">
+          <label>Name of the deceased</label>
+          <input type="text" id="lf-deceasedName" placeholder="Full name">
         </div>
-        {% endfor %}
-
-        <button class="btn-primary" onclick="generateChecklistSummary()">Generate my disclosure summary →</button>
+        <div class="field">
+          <label>Date of death</label>
+          <input type="text" id="lf-dateOfDeath" placeholder="YYYY-MM-DD">
+        </div>
+        <div class="field">
+          <label>What did the insurer say in the rejection? (paste their wording if you have it)</label>
+          <textarea id="lf-rejectionReason" rows="4" placeholder="e.g. Claim repudiated as nominee details were not registered"></textarea>
+        </div>
+        <button class="btn-primary" id="lf-open-case-btn" onclick="openLifeCase()" disabled>Open case file →</button>
       </div>
 
-      <div id="ck-step-summary" style="display:none;">
-        <div class="box-title">Your written disclosure summary</div>
-        <p class="lede">Give this to your insurer or agent in writing (email is fine — it creates a timestamp) when you submit your proposal form. Keep a copy for yourself.</p>
-        <div class="letter-box" id="ck-summary-box"></div>
-        <div class="btn-row">
-          <button class="btn-primary" id="ck-copy-btn" onclick="copySummary()">Copy summary text</button>
-          <button class="btn-ghost" onclick="backToChecklist()">← Back to checklist</button>
+      <div id="lf-step-questions" style="display:none;">
+        <div class="match-tag" id="lf-match-tag"></div>
+        <div class="secondary-note" id="lf-secondary-note" style="display:none;"></div>
+        <p class="lede">A few quick questions to score your case accurately.</p>
+        <div id="lf-questions-container"></div>
+        <button class="btn-primary" id="lf-get-verdict-btn" onclick="getLifeVerdict()" disabled>Get verdict →</button>
+      </div>
+
+      <div id="lf-step-verdict" style="display:none;">
+        <div class="secondary-note" id="lf-verdict-secondary-note" style="display:none;"></div>
+        <div class="seal-wrap">
+          <div class="seal" id="lf-seal">
+            <div class="seal-score" id="lf-seal-score"></div>
+            <div class="seal-label" id="lf-seal-label"></div>
+          </div>
         </div>
+        <div class="box">
+          <div class="box-title">Why this score</div>
+          <p class="box-text" id="lf-verdict-explain"></p>
+        </div>
+        <div class="box">
+          <div class="box-title">What to do next</div>
+          <ol>
+            <li>Write to the insurer's Grievance Redressal Officer (GRO) — every insurer must publish this contact.</li>
+            <li>No response in 15 days → file on IRDAI's Bima Bharosa portal.</li>
+            <li>No resolution in 30 days → Insurance Ombudsman. Free, binding up to ₹50 lakh, no lawyer needed.</li>
+          </ol>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="generateLifeLetter()">Draft my grievance letter →</button>
+          <button class="btn-ghost" onclick="resetLifeAnalyzer()">Start new case</button>
+        </div>
+      </div>
+
+      <div id="lf-step-letter" style="display:none;">
+        <div class="box-title">Your grievance letter</div>
+        <p class="lede">This letter is free — it's built from a template, not generated by AI.</p>
+        <div class="letter-box" id="lf-letter-box"></div>
+        <div class="btn-row">
+          <button class="btn-primary" id="lf-copy-btn" onclick="copyLifeLetter()">Copy letter text</button>
+          <button class="btn-ghost" onclick="backToLifeVerdict()">← Back to verdict</button>
+        </div>
+
+        <div class="box" id="lf-tracking-box" style="margin-top: 20px;">
+          <div class="box-title">Track this case to resolution</div>
+          <p class="box-text" id="lf-tracking-pitch">
+            Once you've sent this letter, we can track your deadlines for you — free of charge.
+          </p>
+          <div id="lf-tracking-started-view" style="display:none;">
+            <p class="box-text">✓ Tracking is active for this case.</p>
+          </div>
+          <button class="btn-primary" id="lf-track-btn" onclick="markLifeGroSent()">I've sent the letter — start tracking</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===================== "BUYING A NEW POLICY" TAB (sub-tabs) ===================== -->
+    <div class="tab-content" id="tab-checklist">
+
+      <div class="sub-tab-row">
+        <button class="sub-tab-btn active" id="subtab-disclosure-btn" onclick="switchSubTab('disclosure')">Disclosure checklist</button>
+        <button class="sub-tab-btn" id="subtab-recommend-btn" onclick="switchSubTab('recommend')">Which policy should I buy?</button>
+      </div>
+
+      <!-- ---- Sub-tab: Disclosure checklist ---- -->
+      <div class="sub-tab-content active" id="subtab-disclosure">
+
+        <div id="ck-step-form">
+          <p class="lede">Going through this <strong>before</strong> you buy a policy means the insurer can never later say "you didn't tell us." Check anything that applies to you, even things that seem minor or were found incidentally on an old report. <strong>If none of these apply to you, that's fine too</strong> — just click the button below and we'll generate a summary confirming you have nothing to disclose, which is itself useful to keep on record.</p>
+          <div class="field">
+            <label>Your name (for the summary)</label>
+            <input type="text" id="ck-name" placeholder="Full name as on the proposal form">
+          </div>
+          <div class="field">
+            <label>Insurer you're buying from</label>
+            <input type="text" id="ck-insurer" placeholder="e.g. HDFC Ergo">
+          </div>
+
+          {% for group in checklist_groups %}
+          <div class="checklist-group">
+            <div class="checklist-group-title">{{ group['group'] }}</div>
+            {% for item in group['items'] %}
+            <div class="checklist-item">
+              <label class="checklist-label">
+                <input type="checkbox" data-item-id="{{ item.id }}" onchange="toggleChecklistItem('{{ item.id }}', this.checked)">
+                {{ item.label }}
+              </label>
+              <input type="text" class="note-input" id="note-{{ item.id }}" style="display:none;"
+                     placeholder="Optional: when found / details">
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+
+          <button class="btn-primary" onclick="generateChecklistSummary()">Generate my disclosure summary →</button>
+        </div>
+
+        <div id="ck-step-summary" style="display:none;">
+          <div class="box-title">Your written disclosure summary</div>
+          <p class="lede">Give this to your insurer or agent in writing (email is fine — it creates a timestamp) when you submit your proposal form. Keep a copy for yourself.</p>
+          <div class="letter-box" id="ck-summary-box"></div>
+          <div class="btn-row">
+            <button class="btn-primary" id="ck-copy-btn" onclick="copySummary()">Copy summary text</button>
+            <button class="btn-ghost" onclick="backToChecklist()">← Back to checklist</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ---- Sub-tab: Which policy should I buy ---- -->
+      <div class="sub-tab-content" id="subtab-recommend" style="display:none;">
+
+        <div id="pr-step-form">
+          <p class="lede">Answer a few questions and we'll suggest the type of health and life cover that fits your stage of life — not a specific insurer's product, just an unbiased read on what to look for. This is a one-time ₹99, since it uses AI to personalize the answer for you.</p>
+          <div class="field">
+            <label>Your age</label>
+            <input type="number" id="pr-age" placeholder="e.g. 32">
+          </div>
+          <div class="field">
+            <label>Number of dependents (spouse, children, parents relying on you)</label>
+            <input type="number" id="pr-dependents" placeholder="e.g. 2">
+          </div>
+          <div class="field">
+            <label>Do you have any existing health conditions?</label>
+            <select class="select-input" id="pr-hasConditions" onchange="togglePrConditionDetail()">
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          <div class="field" id="pr-condition-detail-field" style="display:none;">
+            <label>Briefly, what condition(s)?</label>
+            <input type="text" id="pr-conditionDetail" placeholder="e.g. Type 2 diabetes, controlled">
+          </div>
+          <div class="field">
+            <label>Comfortable monthly premium budget (₹)</label>
+            <input type="number" id="pr-budget" placeholder="e.g. 1500">
+          </div>
+          <div class="field">
+            <label>City</label>
+            <input type="text" id="pr-city" placeholder="e.g. Bengaluru">
+          </div>
+          <button class="btn-primary" id="pr-submit-btn" onclick="requestPolicyRecommendation()" disabled>Get my recommendation — ₹99 →</button>
+        </div>
+
+        <div id="pr-step-result" style="display:none;">
+          <div class="box-title">Your personalized recommendation</div>
+          <p class="lede" id="pr-loading">Working on your recommendation…</p>
+          <div class="letter-box" id="pr-result-box" style="display:none;"></div>
+          <div class="btn-row" id="pr-result-actions" style="display:none;">
+            <button class="btn-primary" id="pr-copy-btn" onclick="copyRecommendation()">Copy recommendation</button>
+            <button class="btn-ghost" onclick="backToPrForm()">← Back</button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ===================== GOVERNMENT SCHEMES TAB ===================== -->
+    <div class="tab-content" id="tab-schemes">
+
+      <p class="lede">Government-backed health coverage that exists alongside any private policy you may have. Most of this needs no agent, no premium, and no paperwork beyond an Aadhaar card.</p>
+
+      <div class="scheme-card">
+        <h3 class="scheme-card-title">Ayushman Bharat — Senior Citizen Scheme (AB PM-JAY, Vay Vandana)</h3>
+        <div class="scheme-highlight-row">
+          <span class="scheme-highlight">₹5 lakh/year cover</span>
+          <span class="scheme-highlight">No income limit</span>
+          <span class="scheme-highlight">No waiting period</span>
+          <span class="scheme-highlight">Aadhaar only</span>
+        </div>
+        <p class="box-text">
+          Every Indian citizen aged 70 and above is eligible for ₹5 lakh of free hospital coverage per year, regardless of income or existing private insurance. This was expanded nationwide in 2024, and as of mid-2026 covers roughly 6 crore senior citizens. If your family already has a PM-JAY card from a lower-income eligibility category, a 70+ member gets an <em>additional</em> ₹5 lakh on top of that, just for themselves. Coverage starts immediately — there is no waiting period for any disease or treatment.
+        </p>
+        <p class="box-text"><strong>How to apply:</strong></p>
+        <ul>
+          <li>Keep your Aadhaar card ready — it's the only document needed for enrollment.</li>
+          <li>Visit the PM-JAY portal, the Ayushman App, or your nearest Common Service Centre (CSC) to register.</li>
+          <li>If your spouse is also 70+, you don't need a separate application — add them as a family member on the same enrollment using the "Add Member" option.</li>
+          <li>Once approved, you'll receive a distinct Ayushman Vay Vandana card for cashless treatment at empanelled hospitals.</li>
+        </ul>
+        <p class="box-text">
+          <strong>One important catch:</strong> if you (or the senior citizen in question) already use a government scheme like CGHS, ECHS, or CAPF health coverage, you must choose between that scheme and PM-JAY — you can't claim both at once, and switching to PM-JAY from one of these is a one-time, non-reversible choice. If you have private health insurance or ESI coverage instead, there's no conflict — you can hold PM-JAY alongside either of those.
+        </p>
+      </div>
+
+      <div class="box">
+        <div class="box-title">A note on accuracy</div>
+        <p class="box-text">
+          Government scheme rules can change with new notifications, and your state may have its own add-on scheme on top of the central one. Always confirm current details on the official PM-JAY portal or by calling the Ayushman Bharat helpline before relying on this for a real decision.
+        </p>
       </div>
 
     </div>
