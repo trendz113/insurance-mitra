@@ -6,28 +6,35 @@ _init_schema_with_retry below) -- there is no manual `psql -f schema.sql`
 step needed. CREATE TABLE IF NOT EXISTS means this is safe to run on every
 deploy; it only creates what's missing and never touches existing data.
 
-Routes:
-  GET  /                          -> landing/redirect to dashboard or login
-  GET  /signup, POST /signup      -> create account
-  GET  /login, POST /login        -> session login
-  GET  /logout                    -> clear session
-  GET  /dashboard                 -> tabs: analyzer / checklist (requires login)
+No login/accounts. Every visitor gets an anonymous session id (a random
+UUID stored in the Flask session cookie) the first time they hit the site.
+This anonymous id is used everywhere the old code used an authenticated
+user_id, purely to scope a case to "whoever created it" -- there is no
+password, no account, and nothing is shared across browsers/devices.
 
+Monetization: analysis (rejection classification + score/verdict) is free.
+The Claude-generated grievance letter is the one paid feature (₹99),
+because it's the only step that actually calls the Claude API and costs
+us money. Payment is verified via Razorpay before the letter is generated.
+
+Routes:
+  GET  /                          -> landing page (claim form)
   POST /api/analyze               -> classify rejection text, return rule + questions
   POST /api/score                 -> compute score from answers, save case, return verdict
-  POST /api/generate-letter       -> call Claude API server-side, save + return letter
-  GET  /api/cases                 -> list user's saved cases
-
+  POST /api/payments/create-order -> create Razorpay order for a case's letter
+  POST /api/payments/verify       -> verify Razorpay payment signature
+  POST /api/generate-letter       -> call Claude API server-side, save + return letter (requires verified payment)
+  GET  /api/cases                 -> list cases created in this browser session
   POST /api/checklist/summary     -> build + save disclosure summary text
-  GET  /api/checklist/summaries   -> list user's saved summaries
+  GET  /api/checklist/summaries   -> list summaries created in this browser session
 """
 import os
 import time
+import uuid
 import logging
 import functools
 import requests
-from flask import Flask, request, jsonify, session, redirect, url_for, render_template
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask, request, jsonify, session, render_template
 
 import db
 import rules
@@ -41,6 +48,8 @@ app.secret_key = os.environ["FLASK_SECRET_KEY"]
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
+
+LETTER_PRICE_PAISE = 9900  # ₹99
 
 
 def _init_schema_with_retry(max_attempts=5, delay_seconds=3):
@@ -68,77 +77,24 @@ def _init_schema_with_retry(max_attempts=5, delay_seconds=3):
 _init_schema_with_retry()
 
 
-def login_required(view):
-    @functools.wraps(view)
-    def wrapped(*args, **kwargs):
-        if "user_id" not in session:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Not authenticated"}), 401
-            return redirect(url_for("login"))
-        return view(*args, **kwargs)
-    return wrapped
+def get_anon_user_id():
+    """
+    Returns a stable anonymous id for this browser session, creating one
+    on first visit. No password, no account -- just a random UUID stored
+    in the signed Flask session cookie, used purely to scope a case to
+    whoever created it.
+    """
+    if "anon_id" not in session:
+        session["anon_id"] = str(uuid.uuid4())
+    return session["anon_id"]
 
 
 # ---------- Pages ----------
 
 @app.route("/")
 def index():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
-
-
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    if request.method == "GET":
-        return render_template("signup.html")
-
-    email = request.form.get("email", "").strip().lower()
-    password = request.form.get("password", "")
-    name = request.form.get("name", "").strip()
-
-    if not email or not password:
-        return render_template("signup.html", error="Email and password are required.")
-    if len(password) < 8:
-        return render_template("signup.html", error="Password must be at least 8 characters.")
-    if db.get_user_by_email(email):
-        return render_template("signup.html", error="An account with this email already exists.")
-
-    password_hash = generate_password_hash(password)
-    user = db.create_user(email, password_hash, name)
-    session["user_id"] = user["id"]
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "GET":
-        return render_template("login.html")
-
-    email = request.form.get("email", "").strip().lower()
-    password = request.form.get("password", "")
-    user = db.get_user_by_email(email)
-
-    if not user or not check_password_hash(user["password_hash"], password):
-        return render_template("login.html", error="Invalid email or password.")
-
-    session["user_id"] = user["id"]
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    user = db.get_user_by_id(session["user_id"])
     return render_template(
         "dashboard.html",
-        user=user,
         checklist_groups=rules.CHECKLIST_GROUPS,
     )
 
@@ -146,7 +102,6 @@ def dashboard():
 # ---------- API: Claim Rejection Analyzer ----------
 
 @app.route("/api/analyze", methods=["POST"])
-@login_required
 def api_analyze():
     data = request.get_json(force=True)
     reason_text = (data.get("rejectionReason") or "").strip()
@@ -166,8 +121,8 @@ def api_analyze():
 
 
 @app.route("/api/score", methods=["POST"])
-@login_required
 def api_score():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     rule_id = data.get("ruleId")
     answers = data.get("answers") or {}
@@ -181,7 +136,7 @@ def api_score():
     secondary_ids = data.get("secondaryIds") or []
 
     case = db.create_claim_case(
-        user_id=session["user_id"],
+        user_id=user_id,
         insurer=form.get("insurer"),
         policy_name=form.get("policyName"),
         claim_amount=form.get("claimAmount") or None,
@@ -205,16 +160,25 @@ def api_score():
 
 
 @app.route("/api/generate-letter", methods=["POST"])
-@login_required
 def api_generate_letter():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     if not case_ref:
         return jsonify({"error": "caseRef is required"}), 400
 
-    case = db.get_case_by_ref(case_ref, session["user_id"])
+    case = db.get_case_by_ref(case_ref, user_id)
     if not case:
         return jsonify({"error": "Case not found"}), 404
+
+    # The letter is the paid feature -- it's the only step that calls the
+    # Claude API and costs us money, so it's the one thing gated on payment.
+    if not db.has_verified_payment(case_ref, user_id):
+        return jsonify({
+            "error": "payment_required",
+            "message": "Generating the formal letter requires a one-time ₹99 payment. "
+                       "Create a payment order via /api/payments/create-order first.",
+        }), 402
 
     rule = rules.RULES_BY_ID.get(case["matched_rule_id"])
     secondary_text = ""
@@ -271,56 +235,57 @@ Keep it under 350 words, formal Indian business letter register, no markdown for
         if not letter_text:
             letter_text = "Could not generate letter. Please try again."
     except requests.RequestException:
+        # Fail-safe: the payment is already verified at this point, so we
+        # do NOT burn the credit -- the person can retry generate-letter
+        # again since has_verified_payment will still return True.
         return jsonify({"error": "Letter generation failed. Please try again in a moment."}), 502
 
-    case = db.update_case_letter(case_ref, session["user_id"], letter_text)
+    case = db.update_case_letter(case_ref, user_id, letter_text)
     if case:
         sheets.upsert_case(case, "health")
+
     return jsonify({"letter": letter_text})
 
 
 @app.route("/api/cases", methods=["GET"])
-@login_required
 def api_list_cases():
-    cases = db.list_cases_for_user(session["user_id"])
+    user_id = get_anon_user_id()
+    cases = db.list_cases_for_user(user_id)
     return jsonify({"cases": cases})
 
 
 # ---------- API: Pre-purchase Disclosure Checklist ----------
 
 @app.route("/api/checklist/summary", methods=["POST"])
-@login_required
 def api_checklist_summary():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     checked = data.get("checked") or {}
     notes = data.get("notes") or {}
     profile = data.get("profile") or {}
 
     summary_text = rules.build_disclosure_summary(checked, notes, profile)
-
     db.save_disclosure_summary(
-        user_id=session["user_id"],
+        user_id=user_id,
         insurer=profile.get("insurer"),
         profile_name=profile.get("name"),
         checked_items=checked,
         notes=notes,
         summary_text=summary_text,
     )
-
     return jsonify({"summary": summary_text})
 
 
 @app.route("/api/checklist/summaries", methods=["GET"])
-@login_required
 def api_list_summaries():
-    summaries = db.list_disclosure_summaries_for_user(session["user_id"])
+    user_id = get_anon_user_id()
+    summaries = db.list_disclosure_summaries_for_user(user_id)
     return jsonify({"summaries": summaries})
 
 
 # ---------- API: Life/Death Claim Analyzer ----------
 
 @app.route("/api/life/analyze", methods=["POST"])
-@login_required
 def api_life_analyze():
     data = request.get_json(force=True)
     reason_text = (data.get("rejectionReason") or "").strip()
@@ -340,8 +305,8 @@ def api_life_analyze():
 
 
 @app.route("/api/life/score", methods=["POST"])
-@login_required
 def api_life_score():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     rule_id = data.get("ruleId")
     answers = data.get("answers") or {}
@@ -355,7 +320,7 @@ def api_life_score():
     secondary_ids = data.get("secondaryIds") or []
 
     case = db.create_life_claim_case(
-        user_id=session["user_id"],
+        user_id=user_id,
         insurer=form.get("insurer"),
         policy_name=form.get("policyName"),
         deceased_name=form.get("deceasedName"),
@@ -378,14 +343,15 @@ def api_life_score():
 
 
 @app.route("/api/life/generate-letter", methods=["POST"])
-@login_required
 def api_life_generate_letter():
+    # Local template, not a Claude call -- stays free, no payment check.
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     if not case_ref:
         return jsonify({"error": "caseRef is required"}), 400
 
-    case = db.get_life_case_by_ref(case_ref, session["user_id"])
+    case = db.get_life_case_by_ref(case_ref, user_id)
     if not case:
         return jsonify({"error": "Case not found"}), 404
 
@@ -400,10 +366,8 @@ def api_life_generate_letter():
         "dateOfDeath": str(case["date_of_death"]) if case["date_of_death"] else None,
         "rejectionReason": case["rejection_reason"],
     }
-
     letter_text = rules.build_life_letter_template(form, rule, secondary, case["score"])
-
-    updated_case = db.update_life_case_letter(case_ref, session["user_id"], letter_text)
+    updated_case = db.update_life_case_letter(case_ref, user_id, letter_text)
     if updated_case:
         sheets.upsert_case(updated_case, "life")
 
@@ -411,13 +375,13 @@ def api_life_generate_letter():
 
 
 @app.route("/api/life/cases", methods=["GET"])
-@login_required
 def api_list_life_cases():
-    cases = db.list_life_cases_for_user(session["user_id"])
+    user_id = get_anon_user_id()
+    cases = db.list_life_cases_for_user(user_id)
     return jsonify({"cases": cases})
 
 
-# ---------- API: Case Tracking (works for both health and life cases) ----------
+# ---------- API: Case Tracking (works for both health and life cases, free) ----------
 
 def _table_for_type(case_type):
     return "life_claim_cases" if case_type == "life" else "claim_cases"
@@ -430,28 +394,21 @@ def _get_case_for_sync(case_ref, user_id, case_type):
 
 
 @app.route("/api/track/gro-sent", methods=["POST"])
-@login_required
 def api_track_gro_sent():
     import datetime
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
     sent_date_str = data.get("sentDate")
 
-    # Health claims require a verified payment before tracking unlocks.
-    # Life/death claims stay free, deliberately, at this stage.
-    if case_type == "health" and not db.has_verified_payment(case_ref, session["user_id"]):
-        return jsonify({
-            "error": "payment_required",
-            "message": "Tracking for this case requires a one-time ₹199 payment. Create a payment order via /api/payments/create-order first.",
-        }), 402
-
+    # Tracking is free for everyone now -- no payment gate here.
     try:
         sent_date = datetime.date.fromisoformat(sent_date_str) if sent_date_str else datetime.date.today()
     except ValueError:
         return jsonify({"error": "Invalid sentDate format, expected YYYY-MM-DD"}), 400
 
-    case = db.mark_gro_sent(case_ref, session["user_id"], sent_date, table=_table_for_type(case_type), case_type=case_type)
+    case = db.mark_gro_sent(case_ref, user_id, sent_date, table=_table_for_type(case_type), case_type=case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
     sheets.upsert_case(case, case_type)
@@ -459,9 +416,9 @@ def api_track_gro_sent():
 
 
 @app.route("/api/track/irdai-filed", methods=["POST"])
-@login_required
 def api_track_irdai_filed():
     import datetime
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
@@ -471,7 +428,7 @@ def api_track_irdai_filed():
     except ValueError:
         return jsonify({"error": "Invalid filedDate format, expected YYYY-MM-DD"}), 400
 
-    case = db.mark_irdai_filed(case_ref, session["user_id"], filed_date, table=_table_for_type(case_type), case_type=case_type)
+    case = db.mark_irdai_filed(case_ref, user_id, filed_date, table=_table_for_type(case_type), case_type=case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
     sheets.upsert_case(case, case_type)
@@ -479,9 +436,9 @@ def api_track_irdai_filed():
 
 
 @app.route("/api/track/ombudsman-filed", methods=["POST"])
-@login_required
 def api_track_ombudsman_filed():
     import datetime
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
@@ -491,7 +448,7 @@ def api_track_ombudsman_filed():
     except ValueError:
         return jsonify({"error": "Invalid filedDate format, expected YYYY-MM-DD"}), 400
 
-    case = db.mark_ombudsman_filed(case_ref, session["user_id"], filed_date, table=_table_for_type(case_type), case_type=case_type)
+    case = db.mark_ombudsman_filed(case_ref, user_id, filed_date, table=_table_for_type(case_type), case_type=case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
     sheets.upsert_case(case, case_type)
@@ -499,9 +456,9 @@ def api_track_ombudsman_filed():
 
 
 @app.route("/api/track/resolved", methods=["POST"])
-@login_required
 def api_track_resolved():
     import datetime
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
@@ -516,7 +473,7 @@ def api_track_resolved():
     except ValueError:
         return jsonify({"error": "Invalid resolvedDate format, expected YYYY-MM-DD"}), 400
 
-    case = db.mark_resolved(case_ref, session["user_id"], resolved_date, outcome, resolution_amount,
+    case = db.mark_resolved(case_ref, user_id, resolved_date, outcome, resolution_amount,
                              table=_table_for_type(case_type), case_type=case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
@@ -525,13 +482,13 @@ def api_track_resolved():
 
 
 @app.route("/api/track/abandoned", methods=["POST"])
-@login_required
 def api_track_abandoned():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
 
-    case = db.mark_abandoned(case_ref, session["user_id"], table=_table_for_type(case_type), case_type=case_type)
+    case = db.mark_abandoned(case_ref, user_id, table=_table_for_type(case_type), case_type=case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
     sheets.upsert_case(case, case_type)
@@ -539,16 +496,17 @@ def api_track_abandoned():
 
 
 @app.route("/api/track/note", methods=["POST"])
-@login_required
 def api_track_note():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
     note_text = (data.get("note") or "").strip()
+
     if not note_text:
         return jsonify({"error": "note is required"}), 400
 
-    case = db.add_case_note(case_ref, session["user_id"], note_text, table=_table_for_type(case_type), case_type=case_type)
+    case = db.add_case_note(case_ref, user_id, note_text, table=_table_for_type(case_type), case_type=case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
     sheets.upsert_case(case, case_type)
@@ -556,18 +514,17 @@ def api_track_note():
 
 
 @app.route("/api/track/events/<case_ref>", methods=["GET"])
-@login_required
 def api_track_events(case_ref):
     events = db.get_case_events(case_ref)
     return jsonify({"events": events})
 
 
 @app.route("/api/track/open-cases", methods=["GET"])
-@login_required
 def api_track_open_cases():
     """Combined health + life open cases, with overdue flags, for the tracker dashboard."""
     import datetime
-    cases = db.list_all_open_cases_for_user(session["user_id"])
+    user_id = get_anon_user_id()
+    cases = db.list_all_open_cases_for_user(user_id)
     today = datetime.date.today()
 
     def is_overdue(case):
@@ -583,35 +540,34 @@ def api_track_open_cases():
     return jsonify({"cases": cases, "sheetsEnabled": sheets.is_enabled()})
 
 
-# ---------- API: Payments (Razorpay) ----------
+# ---------- API: Payments (Razorpay) -- gates the Claude letter only ----------
 
 @app.route("/api/payments/create-order", methods=["POST"])
-@login_required
 def api_create_payment_order():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     case_ref = data.get("caseRef")
     case_type = data.get("caseType", "health")
 
     if not case_ref:
         return jsonify({"error": "caseRef is required"}), 400
+    if case_type != "health":
+        return jsonify({"error": "The letter is free for this case type, no payment needed"}), 400
 
-    case = _get_case_for_sync(case_ref, session["user_id"], case_type)
+    case = _get_case_for_sync(case_ref, user_id, case_type)
     if not case:
         return jsonify({"error": "Case not found"}), 404
 
-    if case_type != "health":
-        return jsonify({"error": "Tracking is free for this case type, no payment needed"}), 400
-
-    if db.has_verified_payment(case_ref, session["user_id"]):
+    if db.has_verified_payment(case_ref, user_id):
         return jsonify({"alreadyPaid": True})
 
     try:
-        order = payments.create_order(case_ref, case_type)
+        order = payments.create_order(case_ref, case_type, amount_paise=LETTER_PRICE_PAISE)
     except Exception as e:
         return jsonify({"error": f"Could not create payment order: {e}"}), 502
 
     db.create_payment_record(
-        user_id=session["user_id"],
+        user_id=user_id,
         case_ref=case_ref,
         case_type=case_type,
         razorpay_order_id=order["id"],
@@ -627,8 +583,8 @@ def api_create_payment_order():
 
 
 @app.route("/api/payments/verify", methods=["POST"])
-@login_required
 def api_verify_payment():
+    user_id = get_anon_user_id()
     data = request.get_json(force=True)
     order_id = data.get("razorpay_order_id")
     payment_id = data.get("razorpay_payment_id")
@@ -638,7 +594,7 @@ def api_verify_payment():
         return jsonify({"error": "Missing payment verification fields"}), 400
 
     payment_record = db.get_payment_by_order_id(order_id)
-    if not payment_record or payment_record["user_id"] != session["user_id"]:
+    if not payment_record or payment_record["user_id"] != user_id:
         return jsonify({"error": "Order not found"}), 404
 
     if not payments.verify_payment(order_id, payment_id, signature):
