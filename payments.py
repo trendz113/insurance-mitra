@@ -1,10 +1,15 @@
 """
-payments.py — Razorpay integration for the paid tracking tier.
+payments.py — Razorpay integration for the paid letter-generation feature.
 
-Pricing: health claims charge ₹199 (one-time) to unlock active tracking
-(GRO -> IRDAI -> Ombudsman stage progression). Life/death claims stay free
-for now, deliberately, since introducing payment friction to a grieving
-family is a worse tradeoff than the revenue is worth at this stage.
+Pricing: generating the Claude-drafted grievance letter for a health claim
+costs ₹99 (one-time per case). This is the only step in the app that calls
+the Claude API, so it's the only place we charge. Case tracking and the
+free score/verdict step cost us nothing and are not gated.
+
+Life/death claim letters use a local template (not Claude) and stay free,
+deliberately -- introducing payment friction to a grieving family is a
+worse tradeoff than the revenue is worth, and there's no API cost to
+recover anyway.
 
 Security note: the signature verification in verify_payment() is the part
 that actually matters. Anyone can POST a fake payment_id to our backend --
@@ -18,9 +23,9 @@ import logging
 
 logger = logging.getLogger("payments")
 
-TRACKING_PRICE_PAISE = {
-    "health": 19900,   # ₹199.00
-    "life": 0,          # free for now
+LETTER_PRICE_PAISE = {
+    "health": 9900,  # ₹99.00
+    "life": 0,        # free -- local template, no Claude API cost
 }
 
 _client = None
@@ -37,16 +42,20 @@ def _get_client():
 
 
 def price_for(case_type: str) -> int:
-    return TRACKING_PRICE_PAISE.get(case_type, TRACKING_PRICE_PAISE["health"])
+    return LETTER_PRICE_PAISE.get(case_type, LETTER_PRICE_PAISE["health"])
 
 
-def create_order(case_ref: str, case_type: str):
+def create_order(case_ref: str, case_type: str, amount_paise: int = None):
     """
-    Creates a Razorpay order for the tracking unlock fee. Returns the order
-    dict (includes 'id') on success, or raises on failure -- the caller
-    should catch and return a clean error to the user.
+    Creates a Razorpay order for the letter-generation fee. Returns the
+    order dict (includes 'id') on success, or raises on failure -- the
+    caller should catch and return a clean error to the user.
+
+    amount_paise lets the caller override the default price_for(case_type)
+    lookup if needed; if omitted, the standard price for that case type
+    is used.
     """
-    amount = price_for(case_type)
+    amount = amount_paise if amount_paise is not None else price_for(case_type)
     if amount == 0:
         return None  # free tier, no order needed
 
@@ -54,7 +63,7 @@ def create_order(case_ref: str, case_type: str):
     order = client.order.create({
         "amount": amount,
         "currency": "INR",
-        "receipt": f"track-{case_ref}",
+        "receipt": f"letter-{case_ref}",
         "notes": {"case_ref": case_ref, "case_type": case_type},
     })
     return order
