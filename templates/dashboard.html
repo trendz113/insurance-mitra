@@ -6,9 +6,6 @@
 {% block body %}
 <div class="page">
   <div class="paper">
-    <div class="top-link-row">
-      <a class="link" href="{{ url_for('logout') }}">Log out ({{ user.email }})</a>
-    </div>
     <div class="header">
       <div>
         <div class="eyebrow">INSURANCE MITRA</div>
@@ -101,13 +98,12 @@
         <div class="box" id="an-tracking-box" style="display:none; margin-top: 20px;">
           <div class="box-title">Track this case to resolution</div>
           <p class="box-text" id="an-tracking-pitch">
-            Once you've sent this letter, we can track your deadlines for you — when to follow up with the GRO, when to escalate to IRDAI, and when to file with the Ombudsman. This is a one-time ₹199 for this case.
+            Once you've sent this letter, we can track your deadlines for you — when to follow up with the GRO, when to escalate to IRDAI, and when to file with the Ombudsman. This is free.
           </p>
           <div id="an-tracking-paid-view" style="display:none;">
             <p class="box-text">✓ Tracking is active for this case.</p>
-            <button class="btn-primary" onclick="markGroSent()">I've sent the letter — start tracking</button>
           </div>
-          <button class="btn-primary" id="an-pay-btn" onclick="startTrackingPayment()">Pay ₹199 & start tracking →</button>
+          <button class="btn-primary" id="an-pay-btn" onclick="markGroSent()">I've sent the letter — start tracking</button>
         </div>
       </div>
 
