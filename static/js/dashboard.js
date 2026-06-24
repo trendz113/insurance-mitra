@@ -1,3 +1,19 @@
+// ===== API base URL =====
+// This page is hosted as a static file on salarybit.in (trial period),
+// but the actual Flask backend runs on Railway. Every API call must go to
+// the absolute Railway URL -- a relative '/api/...' would try to hit
+// salarybit.in/api/... which doesn't exist.
+//
+// credentials: 'include' is required so the browser sends/receives the
+// anon_id session cookie across this cross-origin boundary. Without it,
+// every request looks like a brand-new anonymous visitor and case lookups
+// fail right after creation.
+const API_BASE = 'https://web-production-b0a7.up.railway.app';
+
+function apiFetch(path, options = {}) {
+  return fetch(API_BASE + path, { ...options, credentials: 'include' });
+}
+
 // ===== Top-level tab switching =====
 function switchTab(tab) {
   ['analyzer', 'life', 'checklist', 'schemes'].forEach((t) => {
@@ -84,7 +100,7 @@ async function openCase() {
     rejectionReason: val('an-rejectionReason'),
   };
 
-  const res = await fetch('/api/analyze', {
+  const res = await apiFetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rejectionReason: an.form.rejectionReason }),
@@ -165,7 +181,7 @@ async function getVerdict() {
 }
 
 async function submitScore() {
-  const res = await fetch('/api/score', {
+  const res = await apiFetch('/api/score', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -214,7 +230,7 @@ async function generateLetter() {
 }
 
 async function requestLetter() {
-  const res = await fetch('/api/generate-letter', {
+  const res = await apiFetch('/api/generate-letter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseRef: an.caseRef }),
@@ -239,7 +255,7 @@ async function requestLetter() {
 }
 
 async function startLetterPayment() {
-  const res = await fetch('/api/payments/create-order', {
+  const res = await apiFetch('/api/payments/create-order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseRef: an.caseRef, caseType: 'health' }),
@@ -266,7 +282,7 @@ async function startLetterPayment() {
     description: 'Grievance letter — ' + an.caseRef,
     order_id: data.orderId,
     handler: async function (response) {
-      const verifyRes = await fetch('/api/payments/verify', {
+      const verifyRes = await apiFetch('/api/payments/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -314,7 +330,7 @@ function backToVerdict() {
 }
 
 async function markGroSent() {
-  const res = await fetch('/api/track/gro-sent', {
+  const res = await apiFetch('/api/track/gro-sent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseRef: an.caseRef, caseType: 'health' }),
@@ -363,7 +379,7 @@ async function openLifeCase() {
     rejectionReason: val('lf-rejectionReason'),
   };
 
-  const res = await fetch('/api/life/analyze', {
+  const res = await apiFetch('/api/life/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rejectionReason: lf.form.rejectionReason }),
@@ -444,7 +460,7 @@ async function getLifeVerdict() {
 }
 
 async function submitLifeScore() {
-  const res = await fetch('/api/life/score', {
+  const res = await apiFetch('/api/life/score', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -478,7 +494,7 @@ async function submitLifeScore() {
 }
 
 async function generateLifeLetter() {
-  const res = await fetch('/api/life/generate-letter', {
+  const res = await apiFetch('/api/life/generate-letter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseRef: lf.caseRef }),
@@ -503,7 +519,7 @@ function backToLifeVerdict() {
 }
 
 async function markLifeGroSent() {
-  const res = await fetch('/api/track/gro-sent', {
+  const res = await apiFetch('/api/track/gro-sent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseRef: lf.caseRef, caseType: 'life' }),
@@ -548,7 +564,7 @@ function toggleChecklistItem(itemId, isChecked) {
 
 async function generateChecklistSummary() {
   const profile = { name: val('ck-name'), insurer: val('ck-insurer') };
-  const res = await fetch('/api/checklist/summary', {
+  const res = await apiFetch('/api/checklist/summary', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ checked: ck.checked, notes: ck.notes, profile }),
@@ -607,7 +623,7 @@ async function requestPolicyRecommendation() {
   document.getElementById('pr-result-box').style.display = 'none';
   document.getElementById('pr-result-actions').style.display = 'none';
 
-  const reqRes = await fetch('/api/policy/recommend-request', {
+  const reqRes = await apiFetch('/api/policy/recommend-request', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(inputs),
@@ -624,7 +640,7 @@ async function requestPolicyRecommendation() {
 }
 
 async function requestRecommendation() {
-  const res = await fetch('/api/policy/recommend', {
+  const res = await apiFetch('/api/policy/recommend', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recommendationRef: pr.recommendationRef }),
@@ -652,7 +668,7 @@ async function requestRecommendation() {
 }
 
 async function startRecommendationPayment() {
-  const res = await fetch('/api/payments/create-order', {
+  const res = await apiFetch('/api/payments/create-order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recommendationRef: pr.recommendationRef }),
@@ -676,7 +692,7 @@ async function startRecommendationPayment() {
     description: 'Policy recommendation — ' + pr.recommendationRef,
     order_id: data.orderId,
     handler: async function (response) {
-      const verifyRes = await fetch('/api/payments/verify', {
+      const verifyRes = await apiFetch('/api/payments/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
