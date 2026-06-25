@@ -16,10 +16,10 @@ function apiFetch(path, options = {}) {
 
 // ===== Top-level tab switching =====
 function switchTab(tab) {
-  ['analyzer', 'life', 'checklist', 'schemes'].forEach((t) => {
+  ['analyzer', 'life', 'checklist', 'schemes', 'faq'].forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
-  ['analyzer', 'life', 'checklist', 'schemes'].forEach((t) => {
+  ['analyzer', 'life', 'checklist', 'schemes', 'faq'].forEach((t) => {
     const btn = document.getElementById('tab-' + t + '-btn');
     if (btn) btn.classList.toggle('active', t === tab);
   });
@@ -29,8 +29,14 @@ function switchTab(tab) {
     life: 'Life / death claim case file',
     checklist: "Buying a new policy",
     schemes: 'Government health schemes',
+    faq: 'Frequently asked questions',
   };
   document.getElementById('page-title').textContent = titles[tab] || '';
+}
+
+function toggleFaq(buttonEl) {
+  const item = buttonEl.closest('.faq-item');
+  item.classList.toggle('open');
 }
 
 // (Sub-tab switching removed -- "buying a new policy" is now one
