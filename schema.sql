@@ -10,6 +10,7 @@
 -- users table, since there is no production data to preserve yet.
 
 DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS feedback;
 DROP TABLE IF EXISTS policy_recommendations;
 DROP TABLE IF EXISTS case_events;
 DROP TABLE IF EXISTS disclosure_summaries;
@@ -143,3 +144,12 @@ CREATE TABLE IF NOT EXISTS policy_recommendations (
 CREATE INDEX IF NOT EXISTS idx_claim_cases_user_id ON claim_cases(user_id);
 CREATE INDEX IF NOT EXISTS idx_disclosure_summaries_user_id ON disclosure_summaries(user_id);
 CREATE INDEX IF NOT EXISTS idx_policy_recommendations_user_id ON policy_recommendations(user_id);
+
+-- Free-text feedback from users, checked manually for now (no admin UI yet).
+CREATE TABLE IF NOT EXISTS feedback (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    message TEXT NOT NULL,
+    page_context VARCHAR(50), -- which tab the person was on when they sent it, e.g. 'analyzer', 'life', 'checklist'
+    created_at TIMESTAMP DEFAULT NOW()
+);
