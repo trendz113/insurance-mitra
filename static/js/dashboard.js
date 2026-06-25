@@ -38,15 +38,8 @@ function switchTab(tab) {
   }
 }
 
-// ===== Sub-tab switching (within "buying a new policy") =====
-function switchSubTab(sub) {
-  ['disclosure', 'recommend'].forEach((s) => {
-    document.getElementById('subtab-' + s).classList.toggle('active', s === sub);
-    document.getElementById('subtab-' + s).style.display = s === sub ? 'block' : 'none';
-    const btn = document.getElementById('subtab-' + s + '-btn');
-    if (btn) btn.classList.toggle('active', s === sub);
-  });
-}
+// (Sub-tab switching removed -- "buying a new policy" is now one
+// continuous flow: checklist -> summary -> recommendation, no sub-tabs.)
 
 function val(id) {
   const el = document.getElementById(id);
@@ -87,11 +80,6 @@ document.addEventListener('DOMContentLoaded', () => {
     lfReasonEl.addEventListener('input', () => {
       document.getElementById('lf-open-case-btn').disabled = !lfReasonEl.value.trim();
     });
-  }
-
-  const prAgeEl = document.getElementById('pr-age');
-  if (prAgeEl) {
-    prAgeEl.addEventListener('input', updatePrButtonState);
   }
 });
 
@@ -592,6 +580,7 @@ function copySummary() {
 
 function backToChecklist() {
   document.getElementById('ck-step-summary').style.display = 'none';
+  document.getElementById('pr-step-result').style.display = 'none';
   document.getElementById('ck-step-form').style.display = 'block';
 }
 
@@ -601,27 +590,27 @@ function backToChecklist() {
 
 let pr = { recommendationRef: null, lastRecommendation: '' };
 
-function togglePrConditionDetail() {
-  const hasConditions = val('pr-hasConditions') === 'yes';
-  document.getElementById('pr-condition-detail-field').style.display = hasConditions ? 'block' : 'none';
-}
-
-function updatePrButtonState() {
-  const age = val('pr-age');
-  document.getElementById('pr-submit-btn').disabled = !age || Number(age) < 18 || Number(age) > 100;
-}
-
 async function requestPolicyRecommendation() {
+  // hasExistingConditions is derived from whatever was checked in the
+  // disclosure checklist above -- per the combined flow, we don't ask
+  // a separate yes/no, we just look at whether ck.checked has anything
+  // marked true.
+  const hasAnyChecked = Object.values(ck.checked).some((v) => v);
+
   const inputs = {
-    age: val('pr-age'),
-    dependents: val('pr-dependents'),
-    hasExistingConditions: val('pr-hasConditions'),
-    existingConditionsDetail: val('pr-conditionDetail'),
-    monthlyBudget: val('pr-budget'),
-    city: val('pr-city'),
+    age: val('ck-age'),
+    dependents: val('ck-dependents'),
+    hasExistingConditions: hasAnyChecked ? 'yes' : 'no',
+    monthlyBudget: val('ck-budget'),
+    city: val('ck-city'),
   };
 
-  document.getElementById('pr-step-form').style.display = 'none';
+  if (!inputs.age || Number(inputs.age) < 18 || Number(inputs.age) > 100) {
+    alert('Please enter a valid age (18-100) above before requesting a recommendation.');
+    return;
+  }
+
+  document.getElementById('ck-step-summary').style.display = 'none';
   document.getElementById('pr-step-result').style.display = 'block';
   document.getElementById('pr-loading').textContent = 'Working on your recommendation…';
   document.getElementById('pr-loading').style.display = 'block';
@@ -743,7 +732,7 @@ function copyRecommendation() {
 
 function backToPrForm() {
   document.getElementById('pr-step-result').style.display = 'none';
-  document.getElementById('pr-step-form').style.display = 'block';
+  document.getElementById('ck-step-summary').style.display = 'block';
 }
 
 // ======================================================================
