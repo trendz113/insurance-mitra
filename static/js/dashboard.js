@@ -15,7 +15,10 @@ function apiFetch(path, options = {}) {
 }
 
 // ===== Top-level tab switching =====
+let currentActiveTab = 'analyzer';
+
 function switchTab(tab) {
+  currentActiveTab = tab;
   ['analyzer', 'life', 'checklist', 'schemes', 'faq'].forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
@@ -717,3 +720,57 @@ function backToPrForm() {
   document.getElementById('pr-step-result').style.display = 'none';
   document.getElementById('ck-step-summary').style.display = 'block';
 }
+
+// ======================================================================
+// ===== FEEDBACK ====
+// ======================================================================
+
+async function submitFeedback() {
+  const messageEl = document.getElementById('fb-message');
+  const message = messageEl.value.trim();
+  if (!message) {
+    alert('Please write something before sending.');
+    return;
+  }
+
+  const btn = document.getElementById('fb-submit-btn');
+  btn.disabled = true;
+
+  const res = await apiFetch('/api/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: message, pageContext: currentActiveTab }),
+  });
+
+  btn.disabled = false;
+
+  if (res.ok) {
+    messageEl.value = '';
+    document.getElementById('fb-confirm').style.display = 'block';
+    setTimeout(() => {
+      document.getElementById('fb-confirm').style.display = 'none';
+    }, 4000);
+  } else {
+    alert('Could not send feedback right now. Please try again.');
+  }
+}
+
+// ======================================================================
+// ===== USAGE COUNTER (currently hidden -- see insurance-mitra.html) ====
+// ======================================================================
+
+async function loadUsageCounter() {
+  const el = document.getElementById('usage-counter');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/usage-count', { method: 'GET' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const count = data.count || 0;
+    el.textContent = `${count.toLocaleString('en-IN')} case${count === 1 ? '' : 's'} helped so far`;
+  } catch (e) {
+    // Fails silently -- this is a nice-to-have counter, not critical path.
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadUsageCounter);
