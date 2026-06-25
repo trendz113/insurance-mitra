@@ -307,3 +307,41 @@ def update_policy_recommendation_text(recommendation_ref, user_id, recommendatio
             row = cur.fetchone()
             conn.commit()
             return row
+
+
+# ---- feedback ----
+
+def save_feedback(user_id, message, page_context=None):
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO feedback (user_id, message, page_context)
+                VALUES (%s, %s, %s)
+                RETURNING *
+                """,
+                (user_id, message, page_context),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row
+
+
+# ---- usage stats ----
+# Used for an optional "X people helped so far" counter. Kept as a single
+# combined count across the three case-producing tables, since site visits
+# alone aren't a meaningful number -- a finished case/recommendation is.
+
+def get_usage_count():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM claim_cases) +
+                    (SELECT COUNT(*) FROM life_claim_cases) +
+                    (SELECT COUNT(*) FROM policy_recommendations) AS total
+                """
+            )
+            row = cur.fetchone()
+            return row[0] if row else 0
