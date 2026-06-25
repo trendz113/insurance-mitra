@@ -16,10 +16,10 @@ function apiFetch(path, options = {}) {
 
 // ===== Top-level tab switching =====
 function switchTab(tab) {
-  ['analyzer', 'life', 'checklist', 'schemes', 'mycases'].forEach((t) => {
+  ['analyzer', 'life', 'checklist', 'schemes'].forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
-  ['analyzer', 'life', 'checklist', 'schemes', 'mycases'].forEach((t) => {
+  ['analyzer', 'life', 'checklist', 'schemes'].forEach((t) => {
     const btn = document.getElementById('tab-' + t + '-btn');
     if (btn) btn.classList.toggle('active', t === tab);
   });
@@ -29,13 +29,8 @@ function switchTab(tab) {
     life: 'Life / death claim case file',
     checklist: "Buying a new policy",
     schemes: 'Government health schemes',
-    mycases: 'My cases',
   };
   document.getElementById('page-title').textContent = titles[tab] || '';
-
-  if (tab === 'mycases') {
-    loadMyCases();
-  }
 }
 
 // (Sub-tab switching removed -- "buying a new policy" is now one
@@ -244,7 +239,6 @@ async function requestLetter() {
   box.style.display = 'block';
   document.getElementById('an-letter-actions').style.display = 'flex';
   an.lastLetter = data.letter || '';
-  document.getElementById('an-tracking-box').style.display = 'block';
 }
 
 async function startLetterPayment() {
@@ -320,23 +314,6 @@ function copyLetter() {
 
 function backToVerdict() {
   showStep('an', 'an-step-verdict', AN_STEPS);
-}
-
-async function markGroSent() {
-  const res = await apiFetch('/api/track/gro-sent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ caseRef: an.caseRef, caseType: 'health' }),
-  });
-  const data = await res.json();
-  if (res.ok) {
-    document.getElementById('an-pay-btn').style.display = 'none';
-    document.getElementById('an-tracking-pitch').style.display = 'none';
-    document.getElementById('an-tracking-paid-view').style.display = 'block';
-    alert('Tracking started. We will track your 15-day GRO follow-up deadline for this case.');
-  } else {
-    alert(data.error || 'Something went wrong starting tracking.');
-  }
 }
 
 function resetAnalyzer() {
@@ -509,23 +486,6 @@ function copyLifeLetter() {
 
 function backToLifeVerdict() {
   showStep('lf', 'lf-step-verdict', LF_STEPS);
-}
-
-async function markLifeGroSent() {
-  const res = await apiFetch('/api/track/gro-sent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ caseRef: lf.caseRef, caseType: 'life' }),
-  });
-  const data = await res.json();
-  if (res.ok) {
-    document.getElementById('lf-track-btn').style.display = 'none';
-    document.getElementById('lf-tracking-pitch').style.display = 'none';
-    document.getElementById('lf-tracking-started-view').style.display = 'block';
-    alert('Tracking started. We will track your 15-day GRO follow-up deadline for this case.');
-  } else {
-    alert(data.error || 'Something went wrong starting tracking.');
-  }
 }
 
 function resetLifeAnalyzer() {
@@ -733,72 +693,4 @@ function copyRecommendation() {
 function backToPrForm() {
   document.getElementById('pr-step-result').style.display = 'none';
   document.getElementById('ck-step-summary').style.display = 'block';
-}
-
-// ======================================================================
-// ===== MY CASES / TRACK STATUS (free, reads /api/track/open-cases) ====
-// ======================================================================
-
-const STAGE_LABELS = {
-  drafted: 'Letter drafted, not yet sent',
-  gro_sent: 'Sent to Grievance Redressal Officer',
-  irdai_filed: 'Filed with IRDAI (Bima Bharosa)',
-  ombudsman_filed: 'Filed with Insurance Ombudsman',
-  resolved_won: 'Resolved — won',
-  resolved_lost: 'Resolved — lost',
-  abandoned: 'Abandoned',
-};
-
-async function loadMyCases() {
-  document.getElementById('mc-loading').style.display = 'block';
-  document.getElementById('mc-empty').style.display = 'none';
-  document.getElementById('mc-list').innerHTML = '';
-
-  const res = await apiFetch('/api/track/open-cases', { method: 'GET' });
-  document.getElementById('mc-loading').style.display = 'none';
-
-  if (!res.ok) {
-    document.getElementById('mc-list').innerHTML =
-      '<div class="box"><p class="box-text">Could not load your cases right now. Try refreshing.</p></div>';
-    return;
-  }
-
-  const data = await res.json();
-  const cases = data.cases || [];
-
-  if (cases.length === 0) {
-    document.getElementById('mc-empty').style.display = 'block';
-    return;
-  }
-
-  const list = document.getElementById('mc-list');
-  cases.forEach((c) => {
-    const card = document.createElement('div');
-    card.className = 'box';
-    card.style.marginBottom = '12px';
-
-    const stageLabel = STAGE_LABELS[c.stage] || c.stage || 'Open';
-    const typeLabel = c.case_type === 'life' ? 'Life/death claim' : 'Health claim';
-
-    let deadlineHtml = '';
-    if (c.gro_followup_due) {
-      const overdueTag = c.is_overdue
-        ? ' <span style="color:#B3402A; font-weight:700;">(overdue — follow up now)</span>'
-        : '';
-      deadlineHtml = `<p class="box-text">Next deadline: GRO follow-up by <strong>${c.gro_followup_due}</strong>${overdueTag}</p>`;
-    } else if (c.irdai_followup_due) {
-      const overdueTag = c.is_overdue
-        ? ' <span style="color:#B3402A; font-weight:700;">(overdue — follow up now)</span>'
-        : '';
-      deadlineHtml = `<p class="box-text">Next deadline: IRDAI follow-up by <strong>${c.irdai_followup_due}</strong>${overdueTag}</p>`;
-    }
-
-    card.innerHTML = `
-      <div class="box-title">${typeLabel} — ${c.case_ref}</div>
-      <p class="box-text"><strong>Status:</strong> ${stageLabel}</p>
-      ${deadlineHtml}
-      <p class="box-text" style="color:#5F5E5A; font-size:13px;">${c.insurer || ''} ${c.policy_name ? '— ' + c.policy_name : ''}</p>
-    `;
-    list.appendChild(card);
-  });
 }
