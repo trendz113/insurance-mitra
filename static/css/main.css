@@ -208,9 +208,9 @@ textarea { resize: vertical; }
   margin-bottom: 16px;
 }
 
-.tab-row { display: flex; gap: 8px; margin-bottom: 22px; }
+.tab-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .tab-btn {
-  flex: 1; padding: 10px 14px; font-size: 13.5px; font-weight: 600;
+  flex: 1 1 140px; padding: 10px 14px; font-size: 13.5px; font-weight: 600;
   border: 1px solid #D3D1C7; background: #FFFFFF; color: #5F5E5A;
   border-radius: 4px; cursor: pointer;
 }
