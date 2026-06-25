@@ -515,6 +515,23 @@ function toggleChecklistItem(itemId, isChecked) {
   }
 }
 
+// "I have no health conditions to disclose" is mutually exclusive with
+// every individual condition checkbox -- checking it clears and disables
+// the rest, so there's an explicit, confident way to say "nothing applies
+// to me" instead of just leaving everything blank and hoping that counts.
+function toggleNoConditions(isChecked) {
+  const itemCheckboxes = document.querySelectorAll('[data-item-id]');
+
+  itemCheckboxes.forEach((cb) => {
+    cb.disabled = isChecked;
+    if (isChecked && cb.checked) {
+      cb.checked = false;
+      const itemId = cb.getAttribute('data-item-id');
+      toggleChecklistItem(itemId, false);
+    }
+  });
+}
+
 async function generateChecklistSummary() {
   const profile = { name: val('ck-name'), insurer: val('ck-insurer') };
   const res = await apiFetch('/api/checklist/summary', {
