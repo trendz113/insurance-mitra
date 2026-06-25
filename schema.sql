@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS life_claim_cases (
 CREATE TABLE IF NOT EXISTS case_events (
     id SERIAL PRIMARY KEY,
     case_ref VARCHAR(20) NOT NULL,
-    case_type VARCHAR(10) NOT NULL,  -- 'health' | 'life'
+    case_type VARCHAR(30) NOT NULL,  -- 'health' | 'life'
     user_id VARCHAR(36) NOT NULL,
     event_type VARCHAR(30) NOT NULL, -- letter_drafted | gro_sent | irdai_filed | ombudsman_filed | note_added | resolved_won | resolved_lost | abandoned
     event_note TEXT,
@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS payments (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     case_ref VARCHAR(20) NOT NULL,
-    case_type VARCHAR(10) NOT NULL DEFAULT 'health',
+    case_type VARCHAR(30) NOT NULL DEFAULT 'health',
     razorpay_order_id VARCHAR(100) UNIQUE NOT NULL,
     razorpay_payment_id VARCHAR(100),
     amount_paise INTEGER NOT NULL, -- amount in paise (₹99 = 9900)
