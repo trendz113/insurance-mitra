@@ -619,6 +619,32 @@ def api_verify_payment():
     return jsonify({"verified": True})
 
 
+# ---------- API: Feedback ----------
+
+@app.route("/api/feedback", methods=["POST"])
+def api_submit_feedback():
+    user_id = get_anon_user_id()
+    data = request.get_json(force=True)
+    message = (data.get("message") or "").strip()
+    page_context = data.get("pageContext")
+
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    if len(message) > 5000:
+        return jsonify({"error": "message is too long"}), 400
+
+    db.save_feedback(user_id, message, page_context)
+    return jsonify({"submitted": True})
+
+
+# ---------- API: Usage count (for an optional "people helped" counter) ----------
+
+@app.route("/api/usage-count", methods=["GET"])
+def api_usage_count():
+    count = db.get_usage_count()
+    return jsonify({"count": count})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG") == "1")
